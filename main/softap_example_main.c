@@ -50,12 +50,30 @@ static esp_err_t led_handler(httpd_req_t *req)
 	}else ESP_LOGI(TAG, "response sent successfully");
 	return error;
 }
-
 static httpd_uri_t ledoff = {
     .uri       = "/ledoff",
     .method    = HTTP_GET,
     .handler   = led_handler,
-	.user_ctx = "HEY"
+	.user_ctx = "<html> <body> <button onClick='window.location.href = '/ledon''> ON </button> </body> </html>"
+};
+
+static esp_err_t led_handler_on(httpd_req_t *req)
+{
+	esp_err_t error;
+	ESP_LOGI(TAG, "LED ON");
+	const char *response = (const char *) req->user_ctx;
+	error = httpd_resp_send(req, response, strlen(response));
+	if(error != ESP_OK)
+	{
+		ESP_LOGI(TAG, "Error %d while sending Response", error);
+	}else ESP_LOGI(TAG, "response sent successfully");
+	return error;
+}
+static httpd_uri_t ledon = {
+    .uri       = "/ledon",
+    .method    = HTTP_GET,
+    .handler   = led_handler_on,
+	.user_ctx = "<html> <body> <button onClick='window.location.href = '/ledoff''> OFF </button> </body> </html>"
 };
 
 esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)
@@ -70,13 +88,6 @@ static httpd_handle_t start_webserver(void)
 {
     httpd_handle_t server = NULL;
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-//#if CONFIG_IDF_TARGET_LINUX
-//    // Setting port as 8001 when building for Linux. Port 80 can be used only by a priviliged user in linux.
-//    // So when a unpriviliged user tries to run the application, it throws bind error and the server is not started.
-//    // Port 8001 can be used by an unpriviliged user as well. So the application will not throw bind error and the
-//    // server will be started.
-//    config.server_port = 8001;
-//#endif // !CONFIG_IDF_TARGET_LINUX
     config.lru_purge_enable = true;
 
     // Start the httpd server
@@ -85,6 +96,7 @@ static httpd_handle_t start_webserver(void)
         // Set URI handlers
         ESP_LOGI(TAG, "Registering URI handlers");
         httpd_register_uri_handler(server, &ledoff);
+        httpd_register_uri_handler(server, &ledon);
         return server;
     }
 

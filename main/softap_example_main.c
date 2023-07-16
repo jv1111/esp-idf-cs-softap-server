@@ -54,7 +54,7 @@ static httpd_uri_t ledoff = {
     .uri       = "/ledoff",
     .method    = HTTP_GET,
     .handler   = led_handler,
-	.user_ctx = "<html> <body> <button onClick='window.location.href = '/ledon''> ON </button> </body> </html>"
+	.user_ctx =  "<!DOCTYPE html><html><body><button type=\"button\" onclick=\"window.location.href = '/ledon'\">Led on</button></body></html>"
 };
 
 static esp_err_t led_handler_on(httpd_req_t *req)
@@ -73,7 +73,7 @@ static httpd_uri_t ledon = {
     .uri       = "/ledon",
     .method    = HTTP_GET,
     .handler   = led_handler_on,
-	.user_ctx = "<html> <body> <button onClick='window.location.href = '/ledoff''> OFF </button> </body> </html>"
+	.user_ctx = "<!DOCTYPE html><html><body><button type=\"button\" onclick=\"window.location.href = '/ledoff'\">Led off</button></body></html>"
 };
 
 esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)

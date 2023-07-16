@@ -18,6 +18,13 @@
 #include "lwip/err.h"
 #include "lwip/sys.h"
 
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/param.h>
+#include <esp_http_server.h>
+#include "esp_netif.h"
+#include "esp_tls.h"
+
 /* The examples use WiFi configuration that you can set via project configuration menu.
 
    If you'd rather not, just change the below entries to strings with
@@ -28,7 +35,94 @@
 #define EXAMPLE_ESP_WIFI_CHANNEL   1
 #define EXAMPLE_MAX_STA_CONN       4
 
-static const char *TAG = "wifi softAP";
+static const char *TAG = "webserver";
+
+//-----------------------HTTP SERVER--------------------------------------
+static esp_err_t led_handler(httpd_req_t *req)
+{
+	esp_err_t error;
+	ESP_LOGI(TAG, "LED OFF");
+	const char *response = (const char *) req->user_ctx;
+	error = httpd_resp_send(req, response, strlen(response));
+	if(error != ESP_OK)
+	{
+		ESP_LOGI(TAG, "Error %d while sending Response", error);
+	}else ESP_LOGI(TAG, "response sent successfully");
+	return error;
+}
+
+static httpd_uri_t ledoff = {
+    .uri       = "/ledoff",
+    .method    = HTTP_GET,
+    .handler   = led_handler,
+	.user_ctx = "HEY"
+};
+
+esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)
+{
+    /* For any other URI send 404 and close socket */
+    httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Some 404 error message");
+    return ESP_FAIL;
+}
+
+
+static httpd_handle_t start_webserver(void)
+{
+    httpd_handle_t server = NULL;
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+//#if CONFIG_IDF_TARGET_LINUX
+//    // Setting port as 8001 when building for Linux. Port 80 can be used only by a priviliged user in linux.
+//    // So when a unpriviliged user tries to run the application, it throws bind error and the server is not started.
+//    // Port 8001 can be used by an unpriviliged user as well. So the application will not throw bind error and the
+//    // server will be started.
+//    config.server_port = 8001;
+//#endif // !CONFIG_IDF_TARGET_LINUX
+    config.lru_purge_enable = true;
+
+    // Start the httpd server
+    ESP_LOGI(TAG, "Starting server on port: '%d'", config.server_port);
+    if (httpd_start(&server, &config) == ESP_OK) {
+        // Set URI handlers
+        ESP_LOGI(TAG, "Registering URI handlers");
+        httpd_register_uri_handler(server, &ledoff);
+        return server;
+    }
+
+    ESP_LOGI(TAG, "Error starting server!");
+    return NULL;
+}
+
+//static esp_err_t stop_webserver(httpd_handle_t server)
+//{
+//    // Stop the httpd server
+//    return httpd_stop(server);
+//}
+
+//static void disconnect_handler(void* arg, esp_event_base_t event_base,
+//                               int32_t event_id, void* event_data)
+//{
+//    httpd_handle_t* server = (httpd_handle_t*) arg;
+//    if (*server) {
+//        ESP_LOGI(TAG, "Stopping webserver");
+//        if (stop_webserver(*server) == ESP_OK) {
+//            *server = NULL;
+//        } else {
+//            ESP_LOGE(TAG, "Failed to stop http server");
+//        }
+//    }
+//}
+
+static void connect_handler(void* arg, esp_event_base_t event_base,
+                            int32_t event_id, void* event_data)
+{
+    httpd_handle_t* server = (httpd_handle_t*) arg;
+    if (*server == NULL) {
+        ESP_LOGI(TAG, "Starting webserver");
+        *server = start_webserver();
+    }
+}
+
+//-----------------------------------END-------------------------------------------------
 
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                                     int32_t event_id, void* event_data)
@@ -86,6 +180,8 @@ void wifi_init_softap(void)
 
 void app_main(void)
 {
+    static httpd_handle_t server = NULL;
+
     //Initialize NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -96,4 +192,9 @@ void app_main(void)
 
     ESP_LOGI(TAG, "ESP_WIFI_MODE_AP");
     wifi_init_softap();
+
+    ESP_ERROR_CHECK(esp_netif_init());
+
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_AP_STAIPASSIGNED, &connect_handler, &server));
+//    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &disconnect_handler, &server));
 }

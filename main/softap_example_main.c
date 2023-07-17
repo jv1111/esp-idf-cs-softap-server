@@ -35,6 +35,8 @@
 #define EXAMPLE_ESP_WIFI_CHANNEL   1
 #define EXAMPLE_MAX_STA_CONN       4
 
+bool isLedOn = false;
+
 static const char *TAG = "webserver";
 
 //-----------------------HTTP SERVER--------------------------------------
@@ -42,6 +44,7 @@ static esp_err_t led_handler(httpd_req_t *req)
 {
 	esp_err_t error;
 	ESP_LOGI(TAG, "LED OFF");
+	isLedOn = false;
 	const char *response = (const char *) req->user_ctx;
 	error = httpd_resp_send(req, response, strlen(response));
 	if(error != ESP_OK)
@@ -61,6 +64,7 @@ static esp_err_t led_handler_on(httpd_req_t *req)
 {
 	esp_err_t error;
 	ESP_LOGI(TAG, "LED ON");
+	isLedOn = true;
 	const char *response = (const char *) req->user_ctx;
 	error = httpd_resp_send(req, response, strlen(response));
 	if(error != ESP_OK)
@@ -82,7 +86,6 @@ esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)
     httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Some 404 error message");
     return ESP_FAIL;
 }
-
 
 static httpd_handle_t start_webserver(void)
 {
@@ -134,8 +137,16 @@ static void connect_handler(void* arg, esp_event_base_t event_base,
     }
 }
 
-//-----------------------------------END-------------------------------------------------
+void setupServer(){
+	static httpd_handle_t server = NULL;
+	ESP_ERROR_CHECK(esp_netif_init());
 
+	ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_AP_STAIPASSIGNED, &connect_handler, &server));
+	//    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &disconnect_handler, &server));
+}
+//-----------------------------------END SERVER-------------------------------------------------
+
+//-----------------------------------WIFI-------------------------------------------------------
 static void wifi_event_handler(void* arg, esp_event_base_t event_base,
                                     int32_t event_id, void* event_data)
 {
@@ -190,9 +201,7 @@ void wifi_init_softap(void)
              EXAMPLE_ESP_WIFI_SSID, EXAMPLE_ESP_WIFI_PASS, EXAMPLE_ESP_WIFI_CHANNEL);
 }
 
-void app_main(void)
-{
-    static httpd_handle_t server = NULL;
+void setupSoftAp(){
 
     //Initialize NVS
     esp_err_t ret = nvs_flash_init();
@@ -204,9 +213,18 @@ void app_main(void)
 
     ESP_LOGI(TAG, "ESP_WIFI_MODE_AP");
     wifi_init_softap();
-
-    ESP_ERROR_CHECK(esp_netif_init());
-
-    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_AP_STAIPASSIGNED, &connect_handler, &server));
-//    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, &disconnect_handler, &server));
+}
+//-------------------------------------END WIFI--------------------------------------------------
+void app_main(void)
+{
+	setupSoftAp();
+	setupServer();
+	while(1){
+		if(isLedOn){
+			ESP_LOGI(TAG, "LED IS ON");
+		}else{
+			ESP_LOGI(TAG, "LED IS OFF");
+		}
+		sleep(1);
+	}
 }

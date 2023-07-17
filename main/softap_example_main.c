@@ -25,13 +25,15 @@
 #include "esp_netif.h"
 #include "esp_tls.h"
 
+#include "cJSON.h"
+
 /* The examples use WiFi configuration that you can set via project configuration menu.
 
    If you'd rather not, just change the below entries to strings with
    the config you want - ie #define EXAMPLE_WIFI_SSID "mywifissid"
 */
 #define EXAMPLE_ESP_WIFI_SSID      "ESP32"
-#define EXAMPLE_ESP_WIFI_PASS      "mysolongpassword1234"
+#define EXAMPLE_ESP_WIFI_PASS      "mysolongpassword"
 #define EXAMPLE_ESP_WIFI_CHANNEL   1
 #define EXAMPLE_MAX_STA_CONN       4
 
@@ -40,7 +42,7 @@ bool isLedOn = false;
 static const char *TAG = "webserver";
 
 //-----------------------HTTP SERVER--------------------------------------
-static esp_err_t led_handler(httpd_req_t *req)
+static esp_err_t led_off_handler(httpd_req_t *req)
 {
 	esp_err_t error;
 	ESP_LOGI(TAG, "LED OFF");
@@ -56,7 +58,7 @@ static esp_err_t led_handler(httpd_req_t *req)
 static httpd_uri_t ledoff = {
     .uri       = "/ledoff",
     .method    = HTTP_GET,
-    .handler   = led_handler,
+    .handler   = led_off_handler,
 	.user_ctx =  "<!DOCTYPE html><html><body><button type=\"button\" onclick=\"window.location.href = '/ledon'\">Led on</button></body></html>"
 };
 
@@ -80,6 +82,78 @@ static httpd_uri_t ledon = {
 	.user_ctx = "<!DOCTYPE html><html><body><button type=\"button\" onclick=\"window.location.href = '/ledoff'\">Led off</button></body></html>"
 };
 
+/* An HTTP POST handler */
+static esp_err_t echo_post_handler(httpd_req_t *req) {
+	char buf[100];
+	int ret, remaining = req->content_len;
+
+	while (remaining > 0) {
+		/* Read the data for the request */
+		if ((ret = httpd_req_recv(req, buf, MIN(remaining, sizeof(buf))))
+				<= 0) {
+			if (ret == HTTPD_SOCK_ERR_TIMEOUT) {
+				/* Retry receiving if timeout occurred */
+				continue;
+			}
+			return ESP_FAIL;
+		}
+
+		/* Log data received */
+		ESP_LOGI(TAG, "=========== RECEIVED DATA ==========");
+		ESP_LOGI(TAG, "%.*s", ret, buf);
+		ESP_LOGI(TAG, "====================================");
+
+		 // Parse the received data as a JSON object
+		cJSON *json = cJSON_Parse(buf);
+		if (json == NULL) {
+			ESP_LOGE(TAG, "Failed to parse JSON data");
+			return ESP_FAIL;
+		}
+		// Read the value of the "on" field
+		cJSON *onField = cJSON_GetObjectItem(json, "on");
+		if (onField != NULL) {
+			// Check if the value is true or false
+			bool esp32OnVar = cJSON_IsTrue(onField);
+			ESP_LOGI(TAG, "Received value of 'on': %s",
+					esp32OnVar ? "true" : "false");
+			isLedOn = esp32OnVar;
+			// Perform actions based on the value of 'on'
+			// ...
+
+		} else {
+			ESP_LOGE(TAG, "Failed to get value of 'on' field");
+		}
+
+		// Read the value of the "password" field as a string
+		cJSON *passwordField = cJSON_GetObjectItem(json, "password");
+		if (passwordField != NULL && passwordField->type == cJSON_String) {
+			const char *passwordValue = passwordField->valuestring;
+			ESP_LOGI(TAG, "Received value of 'password': %s", passwordValue);
+
+			// Perform actions based on the value of 'password'
+			// ...
+
+		} else {
+			ESP_LOGE(TAG, "Failed to get value of 'password' field");
+		}
+
+		// Delete the JSON object
+		cJSON_Delete(json);
+		remaining -= ret;
+	}
+
+	// End response
+	const char *response = (const char *)req->user_ctx;
+	httpd_resp_send(req, response, strlen(response));
+	return ESP_OK;
+}
+static const httpd_uri_t echo = {
+		.uri = "/echo",
+		.method = HTTP_POST,
+		.handler = echo_post_handler,
+		.user_ctx = "{\"success\": true}"
+};
+
 esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)
 {
     /* For any other URI send 404 and close socket */
@@ -100,6 +174,7 @@ static httpd_handle_t start_webserver(void)
         ESP_LOGI(TAG, "Registering URI handlers");
         httpd_register_uri_handler(server, &ledoff);
         httpd_register_uri_handler(server, &ledon);
+        httpd_register_uri_handler(server, &echo);
         return server;
     }
 
@@ -221,9 +296,7 @@ void app_main(void)
 	setupServer();
 	while(1){
 		if(isLedOn){
-			ESP_LOGI(TAG, "LED IS ON");
-		}else{
-			ESP_LOGI(TAG, "LED IS OFF");
+			printf("led is on\n");
 		}
 		sleep(1);
 	}
